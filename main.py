@@ -17,6 +17,13 @@ KEYWORDS = ["europa", "rotax", "aircraft", "microlight", "project"]
 GOOD_WORDS = ["project", "needs", "unfinished", "non runner", "spares"]
 BAD_WORDS = ["manual", "plans", "model", "toy"]
 
+# Rough "local" area keywords (expandable)
+LOCAL_AREAS = [
+    "rutland", "leicester", "nottingham", "derby",
+    "northampton", "peterborough", "lincoln",
+    "cambridge", "bedford", "milton keynes"
+]
+
 def load_seen():
     if os.path.exists(SEEN_FILE):
         with open(SEEN_FILE, "r") as f:
@@ -59,6 +66,13 @@ def extract_price(text):
         return float(match.group(1).replace(",", ""))
     return None
 
+def detect_location(text):
+    t = text.lower()
+    for area in LOCAL_AREAS:
+        if area in t:
+            return "📍 LOCAL"
+    return "🌍 UK"
+
 # ---------------- EBAY ---------------- #
 
 def check_ebay(search_url):
@@ -73,6 +87,7 @@ def check_ebay(search_url):
         title = item.select_one(".s-item__title")
         price = item.select_one(".s-item__price")
         link = item.select_one("a")
+        location = item.select_one(".s-item__location")
 
         if not title or not price or not link:
             continue
@@ -101,9 +116,12 @@ def check_ebay(search_url):
         seen.add(url)
         save_seen(seen)
 
+        location_text = location.text if location else title.text
+        loc_tag = detect_location(location_text)
+
         tag = classify(title.text, price_val)
 
-        send_alert(f"""{tag} EBAY DEAL
+        send_alert(f"""{loc_tag} {tag} EBAY DEAL
 
 {title.text}
 £{price_val}
@@ -150,11 +168,12 @@ def check_afors():
         seen.add(link)
         save_seen(seen)
 
+        loc_tag = detect_location(text)
         tag = classify(title, price_val if price_val else 1500)
 
         price_text = f"£{price_val}" if price_val else "Price unknown"
 
-        send_alert(f"""{tag} AFORS DEAL
+        send_alert(f"""{loc_tag} {tag} AFORS DEAL
 
 {title}
 {price_text}
@@ -165,15 +184,12 @@ def check_afors():
 
 def check_facebook():
     url = "https://www.facebook.com/marketplace/search/?query=aircraft%20project"
-
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
+    headers = {"User-Agent": "Mozilla/5.0"}
 
     r = requests.get(url, headers=headers)
 
     if "login" in r.url.lower():
-        return  # blocked by Facebook
+        return
 
     soup = BeautifulSoup(r.text, "html.parser")
 
@@ -201,7 +217,9 @@ def check_facebook():
         seen.add(full_link)
         save_seen(seen)
 
-        send_alert(f"""📘 FACEBOOK DEAL
+        loc_tag = detect_location(text)
+
+        send_alert(f"""{loc_tag} 📘 FACEBOOK DEAL
 
 {text}
 {full_link}
@@ -210,7 +228,7 @@ def check_facebook():
 # ---------------- MAIN ---------------- #
 
 def run():
-    send_alert("✅ Aircraft deal bot FULLY LIVE")
+    send_alert("✅ Aircraft deal bot with LOCATION filtering LIVE")
 
     ebay_searches = [
         "https://www.ebay.co.uk/sch/i.html?_nkw=aircraft+project&_sop=10",
