@@ -81,23 +81,9 @@ def check_ebay(search_url):
         save_seen(seen)
 
         urgency = "🔥🔥" if price_val < 1000 else "🔥"
-
         send_alert(f"""{urgency} DEAL FOUND\n\n{title.text}\n£{price_val}\n{url}\n""")
 
 def run():
-    searches = [
-        "https://www.ebay.co.uk/sch/i.html?_nkw=aircraft+project&_sop=10",
-        "https://www.ebay.co.uk/sch/i.html?_nkw=europa+aircraft&_sop=10",
-        "https://www.ebay.co.uk/sch/i.html?_nkw=rotax+912&_sop=10"
-    ]
-
-    while True:
-        for s in searches:
-            try:
-                check_ebay(s)
-            except Exception as e:
-                print("Error:", e)
-
-        time.sleep(600)
+    send_alert("🚀 TEST MESSAGE FROM RAILWAY")
 
 run()
