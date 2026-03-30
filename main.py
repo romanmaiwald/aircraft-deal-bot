@@ -3,15 +3,19 @@ from bs4 import BeautifulSoup
 import time
 import os
 import json
+import re
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
 SEEN_FILE = "seen.json"
 
+MAX_PRICE = 2000
+
 KEYWORDS = ["europa", "rotax", "aircraft", "microlight", "project"]
 
-MAX_PRICE = 5000  # loosened for testing
+GOOD_WORDS = ["project", "needs", "unfinished", "non runner", "spares"]
+BAD_WORDS = ["manual", "plans", "model", "toy"]
 
 def load_seen():
     if os.path.exists(SEEN_FILE):
@@ -29,10 +33,36 @@ def send_alert(msg):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
 
+def is_good(title):
+    t = title.lower()
+
+    if any(b in t for b in BAD_WORDS):
+        return False
+
+    return any(g in t for g in GOOD_WORDS)
+
+def classify(title, price):
+    t = title.lower()
+
+    if "europa" in t:
+        return "🚨 EUROPA"
+    elif "rotax" in t:
+        return "⚙️ ROTAX"
+    elif price and price < 1000:
+        return "🔥🔥"
+    else:
+        return "🔥"
+
+def extract_price(text):
+    match = re.search(r'£\s?([0-9,]+)', text)
+    if match:
+        return float(match.group(1).replace(",", ""))
+    return None
+
+# ---------------- EBAY ---------------- #
+
 def check_ebay(search_url):
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
+    headers = {"User-Agent": "Mozilla/5.0"}
 
     r = requests.get(search_url, headers=headers)
     soup = BeautifulSoup(r.text, "html.parser")
@@ -52,10 +82,11 @@ def check_ebay(search_url):
         if not any(k in title_text for k in KEYWORDS):
             continue
 
-        price_text = price.text.replace("£", "").split()[0]
+        if not is_good(title_text):
+            continue
 
         try:
-            price_val = float(price_text.replace(",", ""))
+            price_val = float(price.text.replace("£", "").split()[0].replace(",", ""))
         except:
             continue
 
@@ -70,32 +101,139 @@ def check_ebay(search_url):
         seen.add(url)
         save_seen(seen)
 
-        urgency = "🔥🔥" if price_val < 1000 else "🔥"
+        tag = classify(title.text, price_val)
 
-        message = f"""{urgency} DEAL FOUND
+        send_alert(f"""{tag} EBAY DEAL
 
 {title.text}
 £{price_val}
 {url}
-"""
+""")
 
-        send_alert(message)
+# ---------------- AFORS ---------------- #
+
+def check_afors():
+    url = "https://afors.uk/aircraft-for-sale"
+    headers = {"User-Agent": "Mozilla/5.0"}
+
+    r = requests.get(url, headers=headers)
+    soup = BeautifulSoup(r.text, "html.parser")
+
+    listings = soup.select("div.listing")
+
+    for item in listings:
+        text = item.get_text(" ", strip=True)
+        link_tag = item.find("a", href=True)
+
+        if not link_tag:
+            continue
+
+        title = link_tag.text.strip()
+        link = "https://afors.uk" + link_tag["href"]
+
+        title_lower = title.lower()
+
+        if not any(k in title_lower for k in KEYWORDS):
+            continue
+
+        if not is_good(title_lower):
+            continue
+
+        price_val = extract_price(text)
+
+        if price_val and price_val > MAX_PRICE:
+            continue
+
+        if link in seen:
+            continue
+
+        seen.add(link)
+        save_seen(seen)
+
+        tag = classify(title, price_val if price_val else 1500)
+
+        price_text = f"£{price_val}" if price_val else "Price unknown"
+
+        send_alert(f"""{tag} AFORS DEAL
+
+{title}
+{price_text}
+{link}
+""")
+
+# ---------------- FACEBOOK ---------------- #
+
+def check_facebook():
+    url = "https://www.facebook.com/marketplace/search/?query=aircraft%20project"
+
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
+
+    r = requests.get(url, headers=headers)
+
+    if "login" in r.url.lower():
+        return  # blocked by Facebook
+
+    soup = BeautifulSoup(r.text, "html.parser")
+
+    links = soup.find_all("a", href=True)
+
+    for link_tag in links:
+        href = link_tag["href"]
+
+        if "/marketplace/item/" not in href:
+            continue
+
+        full_link = "https://www.facebook.com" + href
+
+        if full_link in seen:
+            continue
+
+        text = link_tag.text.lower()
+
+        if not any(k in text for k in KEYWORDS):
+            continue
+
+        if not is_good(text):
+            continue
+
+        seen.add(full_link)
+        save_seen(seen)
+
+        send_alert(f"""📘 FACEBOOK DEAL
+
+{text}
+{full_link}
+""")
+
+# ---------------- MAIN ---------------- #
 
 def run():
-    send_alert("✅ Aircraft deal bot is LIVE")
+    send_alert("✅ Aircraft deal bot FULLY LIVE")
 
-    searches = [
+    ebay_searches = [
         "https://www.ebay.co.uk/sch/i.html?_nkw=aircraft+project&_sop=10",
         "https://www.ebay.co.uk/sch/i.html?_nkw=europa+aircraft&_sop=10",
         "https://www.ebay.co.uk/sch/i.html?_nkw=rotax+912&_sop=10"
     ]
 
     while True:
-        for s in searches:
+        for s in ebay_searches:
             try:
                 check_ebay(s)
             except Exception as e:
-                print("Error:", e)
+                print("EBAY error:", e)
+
+        try:
+            check_afors()
+        except Exception as e:
+            print("AFORS error:", e)
+
+        try:
+            check_facebook()
+        except Exception as e:
+            print("FB error:", e)
 
         time.sleep(600)
 
