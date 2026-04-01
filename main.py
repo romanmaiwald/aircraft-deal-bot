@@ -294,7 +294,7 @@ def check_facebook():
     for link_tag in soup.find_all("a", href=True):
         href = link_tag["href"]
 
-        if "/marketplace/item/" not in href:
+        if not any(x in href for x in ["/marketplace/item/", "/groups/", "/share/"]):
             continue
 
         full_link = "https://www.facebook.com" + href
@@ -302,11 +302,12 @@ def check_facebook():
         if full_link in seen:
             continue
 
-        text = link_tag.text.lower()
+        text = (link_tag.text or "").lower()
+
+        if not text:
+            text = href.lower()
 
         if not any(k in text for k in KEYWORDS):
-            continue
-        if not is_good(text):
             continue
 
         seen.add(full_link)
@@ -315,7 +316,7 @@ def check_facebook():
         loc = detect_location(text)
 
         send_alert(f"{loc} 📘 FACEBOOK\n{text}\n{full_link}")
-
+        
 # ---------------- GOOGLE ---------------- #
 
 def check_google():
