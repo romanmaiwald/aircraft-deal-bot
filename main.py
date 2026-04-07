@@ -11,14 +11,14 @@ CHAT_ID = os.getenv("CHAT_ID")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GOOGLE_CX = os.getenv("GOOGLE_CX")
 
-SEEN_FILE = "seen.json"
+DATA_FILE = "data.json"
 
 MAX_PRICE = 3000
 
 KEYWORDS = ["europa", "rotax", "aircraft", "microlight", "project"]
 
 GOOD_WORDS = ["project", "needs", "unfinished", "non runner", "spares"]
-BAD_WORDS = ["manual", "plans", "model", "toy"]
+BAD_WORDS = ["manual", "plans", "model", "toy", "fuselage only", "frame only"]
 
 LOCAL_AREAS = [
     "rutland","leicester","nottingham","derby",
@@ -26,17 +26,21 @@ LOCAL_AREAS = [
     "cambridge","bedford","milton keynes"
 ]
 
-def load_seen():
-    if os.path.exists(SEEN_FILE):
-        with open(SEEN_FILE, "r") as f:
-            return set(json.load(f))
-    return set()
+# ---------------- DATA ---------------- #
 
-def save_seen(seen):
-    with open(SEEN_FILE, "w") as f:
-        json.dump(list(seen), f)
+def load_data():
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "r") as f:
+            return json.load(f)
+    return {}
 
-seen = load_seen()
+def save_data(data):
+    with open(DATA_FILE, "w") as f:
+        json.dump(data, f)
+
+data = load_data()
+
+# ---------------- CORE ---------------- #
 
 def send_alert(msg):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -71,6 +75,32 @@ def extract_price(text):
     if match:
         return float(match.group(1).replace(",", ""))
     return None
+
+# ---------------- PRICE TRACKING ---------------- #
+
+def handle_listing(url, title, price, source, location_text):
+    loc = detect_location(location_text or title)
+    tag = classify(title, price)
+
+    if url not in data:
+        data[url] = {"price": price}
+        save_data(data)
+
+        send_alert(f"{loc} {tag} {source}\n{title}\n£{price if price else 'N/A'}\n{url}")
+        return
+
+    old_price = data[url].get("price")
+
+    if price and old_price and price < old_price:
+        drop = old_price - price
+        percent = (drop / old_price) * 100
+
+        data[url]["price"] = price
+        save_data(data)
+
+        send_alert(
+            f"📉 PRICE DROP {source}\n{title}\nWas: £{old_price}\nNow: £{price}\nDrop: £{int(drop)} ({percent:.0f}%)\n{url}"
+        )
 
 # ---------------- EBAY ---------------- #
 
@@ -112,16 +142,8 @@ def check_ebay():
                 continue
 
             url = link["href"]
-            if url in seen:
-                continue
 
-            seen.add(url)
-            save_seen(seen)
-
-            loc = detect_location(location.text if location else t)
-            tag = classify(t, p)
-
-            send_alert(f"{loc} {tag} EBAY\n{title.text}\n£{p}\n{url}")
+            handle_listing(url, title.text, p, "EBAY", location.text if location else "")
 
 # ---------------- AFORS ---------------- #
 
@@ -132,9 +154,7 @@ def check_afors():
     r = requests.get(url, headers=headers)
     soup = BeautifulSoup(r.text, "html.parser")
 
-    listings = soup.select("div.listing")
-
-    for item in listings:
+    for item in soup.select("div.listing"):
         text = item.get_text(" ", strip=True)
         link_tag = item.find("a", href=True)
 
@@ -155,18 +175,7 @@ def check_afors():
         if price_val and price_val > MAX_PRICE:
             continue
 
-        if link in seen:
-            continue
-
-        seen.add(link)
-        save_seen(seen)
-
-        loc = detect_location(text)
-        tag = classify(title, price_val if price_val else 1500)
-
-        price_text = f"£{price_val}" if price_val else "Price unknown"
-
-        send_alert(f"{loc} {tag} AFORS\n{title}\n{price_text}\n{link}")
+        handle_listing(link, title, price_val, "AFORS", text)
 
 # ---------------- GUMTREE ---------------- #
 
@@ -193,18 +202,9 @@ def check_gumtree():
 
         full_link = "https://www.gumtree.com" + link
 
-        if full_link in seen:
-            continue
+        handle_listing(full_link, title, None, "GUMTREE", title)
 
-        seen.add(full_link)
-        save_seen(seen)
-
-        loc = detect_location(title)
-        tag = classify(title, None)
-
-        send_alert(f"{loc} {tag} GUMTREE\n{title}\n{full_link}")
-
-# ---------------- APOLLO DUCK ---------------- #
+# ---------------- APOLLO ---------------- #
 
 def check_apollo():
     url = "https://www.apolloduck.co.uk/aircraft-for-sale"
@@ -230,16 +230,7 @@ def check_apollo():
         if link.startswith("/"):
             link = "https://www.apolloduck.co.uk" + link
 
-        if link in seen:
-            continue
-
-        seen.add(link)
-        save_seen(seen)
-
-        loc = detect_location(title)
-        tag = classify(title, None)
-
-        send_alert(f"{loc} {tag} APOLLO\n{title}\n{link}")
+        handle_listing(link, title, None, "APOLLO", title)
 
 # ---------------- PLANE SELLING ---------------- #
 
@@ -267,56 +258,8 @@ def check_planeselling():
         if link.startswith("/"):
             link = "https://www.planeselling.co.uk" + link
 
-        if link in seen:
-            continue
+        handle_listing(link, title, None, "PLANESELLING", title)
 
-        seen.add(link)
-        save_seen(seen)
-
-        loc = detect_location(title)
-        tag = classify(title, None)
-
-        send_alert(f"{loc} {tag} PLANESELLING\n{title}\n{link}")
-
-# ---------------- FACEBOOK ---------------- #
-
-def check_facebook():
-    url = "https://www.facebook.com/marketplace/search/?query=aircraft%20project"
-    headers = {"User-Agent": "Mozilla/5.0"}
-
-    r = requests.get(url, headers=headers)
-
-    if "login" in r.url.lower():
-        return
-
-    soup = BeautifulSoup(r.text, "html.parser")
-
-    for link_tag in soup.find_all("a", href=True):
-        href = link_tag["href"]
-
-        if not any(x in href for x in ["/marketplace/item/", "/groups/", "/share/"]):
-            continue
-
-        full_link = "https://www.facebook.com" + href
-
-        if full_link in seen:
-            continue
-
-        text = (link_tag.text or "").lower()
-
-        if not text:
-            text = href.lower()
-
-        if not any(k in text for k in KEYWORDS):
-            continue
-
-        seen.add(full_link)
-        save_seen(seen)
-
-        loc = detect_location(text)
-
-        send_alert(f"{loc} 📘 FACEBOOK\n{text}\n{full_link}")
-        
 # ---------------- GOOGLE ---------------- #
 
 def check_google():
@@ -333,9 +276,9 @@ def check_google():
         url = f"https://www.googleapis.com/customsearch/v1?q={q}&key={GOOGLE_API_KEY}&cx={GOOGLE_CX}"
 
         r = requests.get(url)
-        data = r.json()
+        data_json = r.json()
 
-        for item in data.get("items", []):
+        for item in data_json.get("items", []):
             title = item["title"]
             link = item["link"]
 
@@ -346,16 +289,7 @@ def check_google():
             if not is_good(t):
                 continue
 
-            if link in seen:
-                continue
-
-            seen.add(link)
-            save_seen(seen)
-
-            loc = detect_location(title)
-            tag = classify(title, None)
-
-            send_alert(f"{loc} {tag} GOOGLE\n{title}\n{link}")
+            handle_listing(link, title, None, "GOOGLE", title)
 
 # ---------------- EUROPA CLUB ---------------- #
 
@@ -381,15 +315,7 @@ def check_europa_club():
         if not is_good(t):
             continue
 
-        if line in seen:
-            continue
-
-        seen.add(line)
-        save_seen(seen)
-
-        loc = detect_location(line)
-
-        send_alert(f"{loc} 🚨 EUROPA CLUB\n{line}\n{url}")
+        handle_listing(url + line[:30], line, None, "EUROPA CLUB", line)
 
 # ---------------- WINGLIST ---------------- #
 
@@ -417,21 +343,12 @@ def check_winglist():
         if link.startswith("/"):
             link = "https://www.winglist.aero" + link
 
-        if link in seen:
-            continue
-
-        seen.add(link)
-        save_seen(seen)
-
-        loc = detect_location(title)
-        tag = classify(title, None)
-
-        send_alert(f"{loc} {tag} WINGLIST\n{title}\n{link}")
+        handle_listing(link, title, None, "WINGLIST", title)
 
 # ---------------- MAIN ---------------- #
 
 def run():
-    send_alert("🚀 DEAL BOT FULLY LIVE (ALL SOURCES)")
+    send_alert("🚀 DEAL BOT FULLY LIVE (ALL SOURCES + PRICE TRACKING)")
 
     while True:
         try: check_ebay()
@@ -448,9 +365,6 @@ def run():
 
         try: check_planeselling()
         except Exception as e: print("PLANE:", e)
-
-        try: check_facebook()
-        except Exception as e: print("FACEBOOK:", e)
 
         try: check_google()
         except Exception as e: print("GOOGLE:", e)
