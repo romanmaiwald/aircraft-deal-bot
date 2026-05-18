@@ -1,5 +1,9 @@
 name: Aircraft Deal Bot
 
+concurrency:
+  group: aircraft-bot
+  cancel-in-progress: false
+
 on:
   schedule:
     - cron: "*/10 * * * *"
@@ -14,13 +18,15 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install packages
+      - name: Install dependencies
         run: |
           pip install requests beautifulsoup4
 
@@ -38,4 +44,5 @@ jobs:
           git config --global user.email "bot@example.com"
           git add data.json
           git commit -m "update data" || echo "no changes"
+          git pull --rebase
           git push
