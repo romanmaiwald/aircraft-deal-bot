@@ -1,0 +1,37 @@
+name: Aircraft Deal Bot
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install packages
+        run: |
+          pip install requests beautifulsoup4
+
+      - name: Run bot
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GOOGLE_CX: ${{ secrets.GOOGLE_CX }}
+        run: python main.py
+
+      - name: Commit updated data
+        run: |
+          git config --global user.name "bot"
+          git config --global user.email "bot@example.com"
+          git add data.json
+          git commit -m "update data" || echo "no changes"
+          git push
