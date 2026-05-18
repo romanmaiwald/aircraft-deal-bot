@@ -133,9 +133,19 @@ def is_relevant(title):
 
     t = title.lower()
 
+    # reject junk
     if any(b in t for b in BAD_WORDS):
         return False
 
+    # ANY europa listing
+    if "europa" in t:
+        return True
+
+    # ANY rotax listing
+    if "rotax" in t or "912" in t or "914" in t:
+        return True
+
+    # project keywords
     if any(g in t for g in GOOD_WORDS):
         return True
 
@@ -240,6 +250,7 @@ def check_ebay():
     urls = [
         "https://www.ebay.co.uk/sch/i.html?_nkw=aircraft+project&_sop=10",
         "https://www.ebay.co.uk/sch/i.html?_nkw=europa+aircraft&_sop=10",
+        "https://www.ebay.co.uk/sch/i.html?_nkw=europa+xs&_sop=10",
         "https://www.ebay.co.uk/sch/i.html?_nkw=rotax+912&_sop=10",
         "https://www.ebay.co.uk/sch/i.html?_nkw=rotax+914&_sop=10"
     ]
@@ -302,10 +313,13 @@ def check_google():
         return
 
     queries = [
-        "europa aircraft project UK",
+        "europa aircraft UK",
+        "europa xs UK",
+        "europa mono UK",
+        "europa trigear UK",
         "rotax 912 for sale UK",
         "rotax 914 for sale UK",
-        "microlight project UK",
+        "homebuilt aircraft project UK",
         "unfinished aircraft project UK"
     ]
 
@@ -367,7 +381,7 @@ def check_europa_club():
             continue
 
         handle_listing(
-            url + line[:20],
+            url + "#" + line[:20],
             line,
             extract_price(line),
             "EUROPA CLUB",
