@@ -12,7 +12,7 @@ GOOGLE_CX = os.getenv("GOOGLE_CX")
 
 DATA_FILE = "data.json"
 
-MAX_PRICE = 15000
+MAX_PRICE = 20000
 
 KEYWORDS = [
     "europa",
@@ -251,6 +251,7 @@ def check_ebay():
         "https://www.ebay.co.uk/sch/i.html?_nkw=aircraft+project&_sop=10",
         "https://www.ebay.co.uk/sch/i.html?_nkw=europa+aircraft&_sop=10",
         "https://www.ebay.co.uk/sch/i.html?_nkw=europa+xs&_sop=10",
+        "https://www.ebay.co.uk/sch/i.html?_nkw=europa+mono&_sop=10",
         "https://www.ebay.co.uk/sch/i.html?_nkw=rotax+912&_sop=10",
         "https://www.ebay.co.uk/sch/i.html?_nkw=rotax+914&_sop=10"
     ]
@@ -317,6 +318,7 @@ def check_google():
         "europa xs UK",
         "europa mono UK",
         "europa trigear UK",
+        "europa project UK",
         "rotax 912 for sale UK",
         "rotax 914 for sale UK",
         "homebuilt aircraft project UK",
