@@ -75,15 +75,6 @@ def send_alert(msg):
 
 # ---------------- HELPERS ---------------- #
 
-def extract_price(text):
-    match = re.search(r'£\s?([0-9,]+)', text)
-    if match:
-        try:
-            return float(match.group(1).replace(",", ""))
-        except:
-            return None
-    return None
-
 def is_relevant(text):
     t = text.lower()
 
@@ -98,7 +89,16 @@ def is_relevant(text):
 
     return any(k in t for k in KEYWORDS)
 
-# ---------------- STORAGE ---------------- #
+def extract_price(text):
+    match = re.search(r'£\s?([0-9,]+)', text)
+    if match:
+        try:
+            return float(match.group(1).replace(",", ""))
+        except:
+            return None
+    return None
+
+# ---------------- STORAGE + ALERT LOGIC ---------------- #
 
 def handle_listing(url, title, price, source):
 
@@ -115,7 +115,6 @@ def handle_listing(url, title, price, source):
         "url": url
     }
 
-    # NEW ITEM
     if url not in data:
         data[url] = new_item
         save_data(data)
@@ -128,7 +127,6 @@ def handle_listing(url, title, price, source):
         )
         return
 
-    # PRICE DROP CHECK
     old_price = data[url].get("price")
 
     if price and old_price and price < old_price:
@@ -240,7 +238,7 @@ def check_europa_club():
     except:
         pass
 
-# ---------------- WINGLIST ---------------- #
+# ---------------- WINGLIST (FIXED) ---------------- #
 
 def check_winglist():
 
@@ -250,12 +248,35 @@ def check_winglist():
         r = requests.get(url, timeout=30)
         soup = BeautifulSoup(r.text, "html.parser")
 
-        for a in soup.find_all("a"):
-            title = a.text.strip()
+        seen = set()
+
+        for a in soup.select("a"):
+
+            title = a.get_text(strip=True)
             link = a.get("href")
 
             if not title or not link:
                 continue
+
+            t = title.lower()
+
+            # remove navigation / junk
+            bad_patterns = [
+                "login", "register", "about", "contact",
+                "services", "advertise", "membership",
+                "terms", "privacy", "home", "menu"
+            ]
+
+            if any(b in t for b in bad_patterns):
+                continue
+
+            if len(title) < 15:
+                continue
+
+            if link in seen:
+                continue
+
+            seen.add(link)
 
             if link.startswith("/"):
                 link = "https://www.winglist.aero" + link
@@ -265,7 +286,7 @@ def check_winglist():
     except:
         pass
 
-# ---------------- RUNNER ---------------- #
+# ---------------- MAIN RUNNER ---------------- #
 
 def run():
     check_ebay()
