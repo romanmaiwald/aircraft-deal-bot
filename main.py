@@ -72,20 +72,33 @@ def save_data(data):
 
 data = load_data()
 
-# ---------------- CORE ---------------- #
+# ---------------- TELEGRAM ---------------- #
 
 def send_alert(msg):
+
+    if not BOT_TOKEN or not CHAT_ID:
+        print("Telegram secrets missing")
+        return
+
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
-    requests.post(
-        url,
-        data={
-            "chat_id": CHAT_ID,
-            "text": msg
-        }
-    )
+    try:
+        requests.post(
+            url,
+            data={
+                "chat_id": CHAT_ID,
+                "text": msg
+            },
+            timeout=20
+        )
+
+    except Exception as e:
+        print("Telegram error:", e)
+
+# ---------------- HELPERS ---------------- #
 
 def is_good(title):
+
     t = title.lower()
 
     if any(b in t for b in BAD_WORDS):
@@ -94,6 +107,7 @@ def is_good(title):
     return any(g in t for g in GOOD_WORDS)
 
 def classify(title, price):
+
     t = title.lower()
 
     if "europa" in t:
@@ -109,6 +123,7 @@ def classify(title, price):
         return "🔥"
 
 def detect_location(text):
+
     t = text.lower()
 
     for area in LOCAL_AREAS:
@@ -118,6 +133,7 @@ def detect_location(text):
     return "🌍 UK"
 
 def extract_price(text):
+
     match = re.search(r'£\s?([0-9,]+)', text)
 
     if match:
@@ -128,6 +144,7 @@ def extract_price(text):
 # ---------------- PRICE TRACKING ---------------- #
 
 def handle_listing(url, title, price, source, location_text):
+
     loc = detect_location(location_text or title)
     tag = classify(title, price)
 
@@ -188,7 +205,7 @@ def check_ebay():
 
     for search_url in urls:
 
-        r = requests.get(search_url, headers=headers)
+        r = requests.get(search_url, headers=headers, timeout=30)
 
         soup = BeautifulSoup(r.text, "html.parser")
 
@@ -244,7 +261,7 @@ def check_afors():
         "User-Agent": "Mozilla/5.0"
     }
 
-    r = requests.get(url, headers=headers)
+    r = requests.get(url, headers=headers, timeout=30)
 
     soup = BeautifulSoup(r.text, "html.parser")
 
@@ -292,7 +309,7 @@ def check_gumtree():
         "User-Agent": "Mozilla/5.0"
     }
 
-    r = requests.get(url, headers=headers)
+    r = requests.get(url, headers=headers, timeout=30)
 
     soup = BeautifulSoup(r.text, "html.parser")
 
@@ -333,7 +350,7 @@ def check_apollo():
         "User-Agent": "Mozilla/5.0"
     }
 
-    r = requests.get(url, headers=headers)
+    r = requests.get(url, headers=headers, timeout=30)
 
     soup = BeautifulSoup(r.text, "html.parser")
 
@@ -365,53 +382,12 @@ def check_apollo():
             title
         )
 
-# ---------------- PLANESELLING ---------------- #
-
-def check_planeselling():
-
-    url = "https://www.planeselling.co.uk"
-
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
-
-    r = requests.get(url, headers=headers)
-
-    soup = BeautifulSoup(r.text, "html.parser")
-
-    for item in soup.find_all("a"):
-
-        title = item.text.strip()
-
-        link = item.get("href")
-
-        if not title or not link:
-            continue
-
-        t = title.lower()
-
-        if not any(k in t for k in KEYWORDS):
-            continue
-
-        if not is_good(t):
-            continue
-
-        if link.startswith("/"):
-            link = "https://www.planeselling.co.uk" + link
-
-        handle_listing(
-            link,
-            title,
-            None,
-            "PLANESELLING",
-            title
-        )
-
 # ---------------- GOOGLE ---------------- #
 
 def check_google():
 
     if not GOOGLE_API_KEY or not GOOGLE_CX:
+        print("Google API secrets missing")
         return
 
     queries = [
@@ -429,7 +405,7 @@ def check_google():
             f"&cx={GOOGLE_CX}"
         )
 
-        r = requests.get(url)
+        r = requests.get(url, timeout=30)
 
         data_json = r.json()
 
@@ -465,7 +441,7 @@ def check_europa_club():
         "User-Agent": "Mozilla/5.0"
     }
 
-    r = requests.get(url, headers=headers)
+    r = requests.get(url, headers=headers, timeout=30)
 
     soup = BeautifulSoup(r.text, "html.parser")
 
@@ -504,7 +480,7 @@ def check_winglist():
         "User-Agent": "Mozilla/5.0"
     }
 
-    r = requests.get(url, headers=headers)
+    r = requests.get(url, headers=headers, timeout=30)
 
     soup = BeautifulSoup(r.text, "html.parser")
 
@@ -536,18 +512,29 @@ def check_winglist():
             title
         )
 
-# ---------------- RUN ---------------- #
+# ---------------- SAFE RUNNER ---------------- #
+
+def safe_run(name, func):
+
+    try:
+        print(f"Running {name}")
+        func()
+        print(f"{name} complete")
+
+    except Exception as e:
+        print(f"{name} FAILED:", e)
+
+# ---------------- MAIN ---------------- #
 
 def run():
 
-    check_ebay()
-    check_afors()
-    check_gumtree()
-    check_apollo()
-    check_planeselling()
-    check_google()
-    check_europa_club()
-    check_winglist()
+    safe_run("EBAY", check_ebay)
+    safe_run("AFORS", check_afors)
+    safe_run("GUMTREE", check_gumtree)
+    safe_run("APOLLO", check_apollo)
+    safe_run("GOOGLE", check_google)
+    safe_run("EUROPA CLUB", check_europa_club)
+    safe_run("WINGLIST", check_winglist)
 
 if __name__ == "__main__":
     run()
