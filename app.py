@@ -7,23 +7,36 @@ app = Flask(__name__)
 DATA_FILE = "data.json"
 HIDDEN_FILE = "hidden.json"
 
-# ---------------- DATA ---------------- #
+# ---------------- SAFE FILE HANDLING ---------------- #
+
+def safe_load_json(path, default):
+    try:
+        if os.path.exists(path):
+            with open(path, "r") as f:
+                return json.load(f)
+    except:
+        pass
+    return default
+
+def safe_save_json(path, data):
+    try:
+        with open(path, "w") as f:
+            json.dump(data, f)
+    except:
+        pass
 
 def load_data():
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r") as f:
-            return json.load(f)
-    return {}
+    return safe_load_json(DATA_FILE, {})
 
 def load_hidden():
-    if os.path.exists(HIDDEN_FILE):
-        with open(HIDDEN_FILE, "r") as f:
-            return set(json.load(f))
-    return set()
+    return set(safe_load_json(HIDDEN_FILE, []))
 
 def save_hidden(hidden):
-    with open(HIDDEN_FILE, "w") as f:
-        json.dump(list(hidden), f)
+    safe_save_json(HIDDEN_FILE, list(hidden))
+
+# ensure file exists at startup
+if not os.path.exists(HIDDEN_FILE):
+    save_hidden(set())
 
 # ---------------- UI ---------------- #
 
@@ -51,34 +64,18 @@ HTML = """
             padding:3px 8px;
             border-radius:6px;
             font-size:12px;
-            display:inline-block;
-            margin-bottom:8px;
-        }
-
-        a, button {
-            margin-right:10px;
         }
 
         button {
             padding:6px 10px;
             border-radius:6px;
             border:none;
+            margin-right:8px;
             cursor:pointer;
         }
 
-        .hide-btn {
-            background:#ff4d4d;
-            color:white;
-        }
-
-        .open-btn {
-            background:#4da3ff;
-            color:white;
-        }
-
-        .topbar {
-            margin-bottom:15px;
-        }
+        .hide { background:#ff4d4d; color:white; }
+        .open { background:#4da3ff; color:white; }
     </style>
 </head>
 
@@ -86,16 +83,13 @@ HTML = """
 
 <h2>✈ Aircraft Deal Bot</h2>
 
-<div class="topbar">
-    <button onclick="loadData()">Refresh</button>
-</div>
+<button onclick="loadData()">Refresh</button>
 
 <div id="list"></div>
 
 <script>
 
 async function loadData() {
-
     const res = await fetch('/data');
     const data = await res.json();
 
@@ -109,9 +103,11 @@ async function loadData() {
             <h3>${item.title}</h3>
             <div class="price">£${item.price || 'N/A'}</div>
 
-            <a class="open-btn" href="${item.url}" target="_blank">Open</a>
+            <button class="open" onclick="window.open('${item.url}')">
+                Open
+            </button>
 
-            <button class="hide-btn" onclick="hideItem('${item.url}')">
+            <button class="hide" onclick="hideItem('${item.url}')">
                 Hide
             </button>
         </div>`;
@@ -121,7 +117,6 @@ async function loadData() {
 }
 
 async function hideItem(url) {
-
     await fetch('/hide', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -153,7 +148,6 @@ def data():
     items = []
 
     for url, v in raw.items():
-
         if url in hidden:
             continue
 
@@ -168,8 +162,8 @@ def data():
 
 @app.route("/hide", methods=["POST"])
 def hide():
-    data_req = request.get_json()
-    url = data_req.get("url")
+    req = request.get_json()
+    url = req.get("url")
 
     if not url:
         return {"ok": False}
