@@ -1,50 +1,108 @@
 from flask import Flask, render_template_string, request, jsonify
 import json
 import os
+import requests
+import base64
 
 app = Flask(__name__)
 
+# ---------------- CONFIG ---------------- #
+
 DATA_FILE = "data.json"
+
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+GITHUB_REPO = os.getenv("GITHUB_REPO")
+
 HIDDEN_FILE = "hidden.json"
 WATCHLIST_FILE = "watchlist.json"
 
-# ---------------- SAFE JSON ---------------- #
+# ---------------- GITHUB STORAGE ---------------- #
 
-def safe_load_json(path, default):
+def github_headers():
+    return {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github+json"
+    }
+
+def github_get_file(path, default):
+
     try:
-        if os.path.exists(path):
-            with open(path, "r") as f:
+
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
+
+        r = requests.get(url, headers=github_headers())
+
+        if r.status_code != 200:
+            return default
+
+        data = r.json()
+
+        content = base64.b64decode(data["content"]).decode()
+
+        return json.loads(content)
+
+    except:
+        return default
+
+def github_save_file(path, content_data):
+
+    try:
+
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
+
+        # get existing SHA if file exists
+        r = requests.get(url, headers=github_headers())
+
+        sha = None
+
+        if r.status_code == 200:
+            sha = r.json()["sha"]
+
+        content_encoded = base64.b64encode(
+            json.dumps(content_data, indent=2).encode()
+        ).decode()
+
+        payload = {
+            "message": f"update {path}",
+            "content": content_encoded
+        }
+
+        if sha:
+            payload["sha"] = sha
+
+        requests.put(
+            url,
+            headers=github_headers(),
+            json=payload
+        )
+
+    except Exception as e:
+        print("GitHub save error:", e)
+
+# ---------------- LOCAL DATA ---------------- #
+
+def load_data():
+
+    try:
+        if os.path.exists(DATA_FILE):
+            with open(DATA_FILE, "r") as f:
                 return json.load(f)
     except:
         pass
-    return default
 
-def safe_save_json(path, data):
-    try:
-        with open(path, "w") as f:
-            json.dump(data, f)
-    except:
-        pass
-
-def load_data():
-    return safe_load_json(DATA_FILE, {})
+    return {}
 
 def load_hidden():
-    return set(safe_load_json(HIDDEN_FILE, []))
+    return set(github_get_file(HIDDEN_FILE, []))
 
 def save_hidden(hidden):
-    safe_save_json(HIDDEN_FILE, list(hidden))
+    github_save_file(HIDDEN_FILE, list(hidden))
 
 def load_watchlist():
-    return set(safe_load_json(WATCHLIST_FILE, []))
+    return set(github_get_file(WATCHLIST_FILE, []))
 
 def save_watchlist(w):
-    safe_save_json(WATCHLIST_FILE, list(w))
-
-# auto-create files
-for f in [HIDDEN_FILE, WATCHLIST_FILE]:
-    if not os.path.exists(f):
-        safe_save_json(f, [])
+    github_save_file(WATCHLIST_FILE, list(w))
 
 # ---------------- UI ---------------- #
 
@@ -52,59 +110,59 @@ HTML = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Aircraft Deal Bot</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aircraft Deal Bot</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <style>
 
-body {
-    font-family: Arial;
+body{
+    font-family:Arial;
     background:#0b0f14;
     color:white;
-    margin:0;
     padding:20px;
 }
 
-.card {
+.card{
     background:#1a2433;
     padding:15px;
-    margin:10px 0;
+    margin-bottom:12px;
     border-radius:10px;
 }
 
-.price {
+.price{
     color:#00ff99;
     font-weight:bold;
 }
 
-.tag {
+.tag{
     background:#2b3b52;
+    display:inline-block;
     padding:3px 8px;
     border-radius:6px;
     font-size:12px;
-    display:inline-block;
     margin-bottom:8px;
 }
 
-button {
-    padding:6px 10px;
+button{
+    padding:7px 12px;
     border:none;
     border-radius:6px;
     margin:3px;
     cursor:pointer;
 }
 
-.open { background:#4da3ff; color:white; }
-.hide { background:#ff4d4d; color:white; }
-.watch { background:#ffaa00; color:black; }
+.open{background:#4da3ff;color:white;}
+.hide{background:#ff4d4d;color:white;}
+.watch{background:#ffaa00;color:black;}
 
-.toolbar {
-    margin-bottom:20px;
-}
-
-.drop {
+.drop{
     color:#ff8080;
     font-weight:bold;
+}
+
+.toolbar{
+    margin-bottom:20px;
 }
 
 </style>
@@ -131,36 +189,39 @@ button {
 
 let currentFilter = 'all';
 
-function setFilter(f) {
+function setFilter(f){
     currentFilter = f;
     loadData();
 }
 
-async function loadData() {
+async function loadData(){
 
     const res = await fetch('/data');
     const data = await res.json();
 
     let html = '';
 
-    for (let item of data.items) {
+    for(let item of data.items){
 
         let t = item.title.toLowerCase();
 
-        if (currentFilter === 'europa' && !t.includes('europa'))
+        if(currentFilter === 'europa' &&
+           !t.includes('europa'))
             continue;
 
-        if (currentFilter === 'rotax' &&
-            !(t.includes('rotax') || t.includes('912') || t.includes('914')))
+        if(currentFilter === 'rotax' &&
+           !(t.includes('rotax') ||
+             t.includes('912') ||
+             t.includes('914')))
             continue;
 
-        if (currentFilter === 'cheap' &&
-            item.price &&
-            item.price > 20000)
+        if(currentFilter === 'cheap' &&
+           item.price &&
+           item.price > 20000)
             continue;
 
-        if (currentFilter === 'watchlist' &&
-            !item.watchlisted)
+        if(currentFilter === 'watchlist' &&
+           !item.watchlisted)
             continue;
 
         html += `
@@ -174,7 +235,8 @@ async function loadData() {
                 £${item.price || 'N/A'}
             </div>
 
-            ${item.price_drop ? '<div class="drop">📉 PRICE DROP</div>' : ''}
+            ${item.price_drop ?
+                '<div class="drop">📉 PRICE DROP</div>' : ''}
 
             <br><br>
 
@@ -201,9 +263,9 @@ async function loadData() {
     document.getElementById('list').innerHTML = html;
 }
 
-async function hideItem(url) {
+async function hideItem(url){
 
-    await fetch('/hide', {
+    await fetch('/hide',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({url})
@@ -212,9 +274,9 @@ async function hideItem(url) {
     loadData();
 }
 
-async function toggleWatch(url) {
+async function toggleWatch(url){
 
-    await fetch('/watch', {
+    await fetch('/watch',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({url})
@@ -223,14 +285,14 @@ async function toggleWatch(url) {
     loadData();
 }
 
-async function showHidden() {
+async function showHidden(){
 
     const res = await fetch('/hidden');
     const data = await res.json();
 
     let html = '<h3>Hidden Listings</h3>';
 
-    for (let item of data.items) {
+    for(let item of data.items){
 
         html += `
         <div class="card">
@@ -247,9 +309,9 @@ async function showHidden() {
     document.getElementById('list').innerHTML = html;
 }
 
-async function restoreItem(url) {
+async function restoreItem(url){
 
-    await fetch('/restore', {
+    await fetch('/restore',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({url})
@@ -276,6 +338,7 @@ def home():
 def data():
 
     raw = load_data()
+
     hidden = load_hidden()
     watchlist = load_watchlist()
 
@@ -303,9 +366,11 @@ def data():
 def hide():
 
     req = request.get_json()
+
     url = req.get("url")
 
     hidden = load_hidden()
+
     hidden.add(url)
 
     save_hidden(hidden)
@@ -316,6 +381,7 @@ def hide():
 def restore():
 
     req = request.get_json()
+
     url = req.get("url")
 
     hidden = load_hidden()
@@ -331,6 +397,7 @@ def restore():
 def hidden():
 
     raw = load_data()
+
     hidden = load_hidden()
 
     items = []
@@ -350,6 +417,7 @@ def hidden():
 def watch():
 
     req = request.get_json()
+
     url = req.get("url")
 
     w = load_watchlist()
