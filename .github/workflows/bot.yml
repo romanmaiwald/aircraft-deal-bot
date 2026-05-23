@@ -1,26 +1,23 @@
 name: Aircraft Deal Bot
 
-concurrency:
-  group: aircraft-bot
-  cancel-in-progress: false
-
 on:
   schedule:
     - cron: "*/10 * * * *"
-
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
 
-    permissions:
-      contents: write
-
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
@@ -40,7 +37,9 @@ jobs:
         run: |
           git config --global user.name "bot"
           git config --global user.email "bot@example.com"
+
           git add data.json
+
           git commit -m "update data" || echo "no changes"
-          git pull --rebase
+
           git push
