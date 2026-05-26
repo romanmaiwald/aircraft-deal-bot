@@ -3,6 +3,7 @@ name: Aircraft Deal Bot
 on:
   schedule:
     - cron: "*/10 * * * *"
+
   workflow_dispatch:
 
 permissions:
@@ -10,11 +11,19 @@ permissions:
 
 jobs:
   run-bot:
+
     runs-on: ubuntu-latest
 
+    concurrency:
+      group: aircraft-bot
+      cancel-in-progress: false
+
     steps:
-      - name: Checkout repository
+
+      - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -23,7 +32,8 @@ jobs:
 
       - name: Install packages
         run: |
-          pip install requests beautifulsoup4
+          pip install requests beautifulsoup4 playwright
+          playwright install chromium
 
       - name: Run bot
         env:
@@ -40,6 +50,6 @@ jobs:
 
           git add data.json
 
-          git commit -m "update data" || echo "no changes"
+          git diff --cached --quiet || git commit -m "update data"
 
           git push
