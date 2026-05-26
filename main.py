@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 import os
 import json
 import re
+from urllib.parse import quote
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
@@ -41,6 +42,17 @@ BAD_WORDS = [
     "manual",
     "poster",
     "dvd"
+]
+
+AFORS_SEARCHES = [
+    "europa",
+    "europa xs",
+    "rotax 912",
+    "rotax 914",
+    "aircraft project",
+    "homebuilt aircraft",
+    "permit expired",
+    "unfinished kit"
 ]
 
 # ---------------- DATA ---------------- #
@@ -405,18 +417,24 @@ def check_winglist():
 
 def check_afors():
 
-    urls = [
-        "https://afors.com/aircraftView.php",
-        "https://afors.com/engineView.php"
-    ]
-
     headers = {
         "User-Agent": "Mozilla/5.0"
     }
 
-    for url in urls:
+    seen = set()
+
+    for search in AFORS_SEARCHES:
 
         try:
+
+            encoded = quote(search)
+
+            url = (
+                "https://afors.com/index.php?"
+                f"search={encoded}"
+            )
+
+            print("AFORS SEARCH:", url)
 
             r = requests.get(
                 url,
@@ -429,77 +447,63 @@ def check_afors():
                 "html.parser"
             )
 
-            seen = set()
+            links = soup.find_all("a", href=True)
 
-            # AFORS listings are usually inside rows
-            rows = soup.find_all("tr")
+            for a in links:
 
-            for row in rows:
-
-                text = row.get_text(
+                title = a.get_text(
                     " ",
                     strip=True
                 )
 
-                if not text:
-                    continue
-
-                if len(text) < 20:
-                    continue
-
-                link_tag = row.find(
-                    "a",
-                    href=True
-                )
-
-                if not link_tag:
-                    continue
-
-                link = link_tag["href"]
-
-                if "view.php?id=" not in link:
-                    continue
-
-                if link.startswith("/"):
-                    link = "https://afors.com" + link
-
-                elif not link.startswith("http"):
-                    link = "https://afors.com/" + link
-
-                if link in seen:
-                    continue
-
-                seen.add(link)
-
-                title = link_tag.get_text(
-                    " ",
-                    strip=True
-                )
+                href = a["href"]
 
                 if not title:
-                    title = text[:120]
+                    continue
+
+                if len(title) < 10:
+                    continue
 
                 t = title.lower()
 
+                if not is_relevant(t):
+                    continue
+
                 bad = [
                     "wanted",
+                    "instruction",
                     "insurance",
                     "finance",
-                    "instruction",
-                    "hangarage",
                     "transport",
+                    "hangarage",
                     "trailer service"
                 ]
 
                 if any(b in t for b in bad):
                     continue
 
-                price = extract_price(text)
+                if href.startswith("/"):
+                    href = "https://afors.com" + href
+
+                elif not href.startswith("http"):
+                    href = "https://afors.com/" + href
+
+                if href in seen:
+                    continue
+
+                seen.add(href)
+
+                parent_text = a.parent.get_text(
+                    " ",
+                    strip=True
+                )
+
+                price = extract_price(parent_text)
 
                 print("AFORS FOUND:", title, price)
 
                 handle_listing(
-                    link,
+                    href,
                     title,
                     price,
                     "AFORS"
