@@ -1,9 +1,9 @@
 import requests
 from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright
 import os
 import json
 import re
-from urllib.parse import quote
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
@@ -42,17 +42,6 @@ BAD_WORDS = [
     "manual",
     "poster",
     "dvd"
-]
-
-AFORS_SEARCHES = [
-    "europa",
-    "europa xs",
-    "rotax 912",
-    "rotax 914",
-    "aircraft project",
-    "homebuilt aircraft",
-    "permit expired",
-    "unfinished kit"
 ]
 
 # ---------------- DATA ---------------- #
@@ -162,7 +151,6 @@ def handle_listing(url, title, price, source):
         "url": url
     }
 
-    # NEW LISTING
     if url not in data:
 
         data[url] = new_item
@@ -180,7 +168,6 @@ def handle_listing(url, title, price, source):
 
         return
 
-    # PRICE DROP
     old_price = data[url].get("price")
 
     if (
@@ -190,7 +177,6 @@ def handle_listing(url, title, price, source):
     ):
 
         data[url]["price"] = price
-        data[url]["price_drop"] = True
 
         save_data(data)
 
@@ -413,107 +399,92 @@ def check_winglist():
 
         print("WINGLIST ERROR:", e)
 
-# ---------------- AFORS ---------------- #
+# ---------------- AFORS PLAYWRIGHT ---------------- #
 
 def check_afors():
 
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
+    try:
 
-    seen = set()
+        with sync_playwright() as p:
 
-    for search in AFORS_SEARCHES:
-
-        try:
-
-            encoded = quote(search)
-
-            url = (
-                "https://afors.com/index.php?"
-                f"search={encoded}"
+            browser = p.chromium.launch(
+                headless=True
             )
 
-            print("AFORS SEARCH:", url)
+            page = browser.new_page()
 
-            r = requests.get(
-                url,
-                headers=headers,
-                timeout=30
+            page.goto(
+                "https://afors.com",
+                timeout=60000
             )
 
-            soup = BeautifulSoup(
-                r.text,
-                "html.parser"
+            page.wait_for_timeout(5000)
+
+            html = page.content()
+
+            browser.close()
+
+        soup = BeautifulSoup(
+            html,
+            "html.parser"
+        )
+
+        seen = set()
+
+        links = soup.find_all("a", href=True)
+
+        for a in links:
+
+            title = a.get_text(
+                " ",
+                strip=True
             )
 
-            links = soup.find_all("a", href=True)
+            href = a["href"]
 
-            for a in links:
+            if not title:
+                continue
 
-                title = a.get_text(
-                    " ",
-                    strip=True
-                )
+            if len(title) < 10:
+                continue
 
-                href = a["href"]
+            t = title.lower()
 
-                if not title:
-                    continue
+            if not is_relevant(t):
+                continue
 
-                if len(title) < 10:
-                    continue
+            if href.startswith("/"):
+                href = "https://afors.com" + href
 
-                t = title.lower()
+            elif not href.startswith("http"):
+                href = "https://afors.com/" + href
 
-                if not is_relevant(t):
-                    continue
+            if href in seen:
+                continue
 
-                bad = [
-                    "wanted",
-                    "instruction",
-                    "insurance",
-                    "finance",
-                    "transport",
-                    "hangarage",
-                    "trailer service"
-                ]
+            seen.add(href)
 
-                if any(b in t for b in bad):
-                    continue
+            parent_text = a.parent.get_text(
+                " ",
+                strip=True
+            )
 
-                if href.startswith("/"):
-                    href = "https://afors.com" + href
+            price = extract_price(parent_text)
 
-                elif not href.startswith("http"):
-                    href = "https://afors.com/" + href
+            print("AFORS FOUND:", title)
 
-                if href in seen:
-                    continue
+            handle_listing(
+                href,
+                title,
+                price,
+                "AFORS"
+            )
 
-                seen.add(href)
+    except Exception as e:
 
-                parent_text = a.parent.get_text(
-                    " ",
-                    strip=True
-                )
+        print("AFORS ERROR:", e)
 
-                price = extract_price(parent_text)
-
-                print("AFORS FOUND:", title, price)
-
-                handle_listing(
-                    href,
-                    title,
-                    price,
-                    "AFORS"
-                )
-
-        except Exception as e:
-
-            print("AFORS ERROR:", e)
-
-# ---------------- MAIN RUNNER ---------------- #
+# ---------------- MAIN ---------------- #
 
 def run():
 
