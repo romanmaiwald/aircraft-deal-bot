@@ -46,14 +46,21 @@ BAD_WORDS = [
 # ---------------- DATA ---------------- #
 
 def load_data():
+
     if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r") as f:
-            return json.load(f)
+
+        try:
+            with open(DATA_FILE, "r") as f:
+                return json.load(f)
+        except:
+            return {}
+
     return {}
 
 def save_data(data):
+
     with open(DATA_FILE, "w") as f:
-        json.dump(data, f)
+        json.dump(data, f, indent=2)
 
 data = load_data()
 
@@ -67,6 +74,7 @@ def send_alert(msg):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
     try:
+
         requests.post(
             url,
             data={
@@ -75,12 +83,17 @@ def send_alert(msg):
             },
             timeout=20
         )
-    except:
-        pass
+
+    except Exception as e:
+
+        print("TELEGRAM ERROR:", e)
 
 # ---------------- HELPERS ---------------- #
 
 def is_relevant(text):
+
+    if not text:
+        return False
 
     t = text.lower()
 
@@ -90,18 +103,28 @@ def is_relevant(text):
     if "europa" in t:
         return True
 
-    if "rotax" in t or "912" in t or "914" in t:
+    if "rotax" in t:
+        return True
+
+    if "912" in t or "914" in t:
         return True
 
     return any(k in t for k in KEYWORDS)
 
 def extract_price(text):
 
+    if not text:
+        return None
+
     match = re.search(r'£\s?([0-9,]+)', text)
 
     if match:
+
         try:
-            return float(match.group(1).replace(",", ""))
+            return float(
+                match.group(1).replace(",", "")
+            )
+
         except:
             return None
 
@@ -111,7 +134,7 @@ def extract_price(text):
 
 def handle_listing(url, title, price, source):
 
-    if not title:
+    if not url or not title:
         return
 
     if not is_relevant(title):
@@ -141,6 +164,8 @@ def handle_listing(url, title, price, source):
             f"{url}"
         )
 
+        print("NEW:", title)
+
         return
 
     # PRICE DROP
@@ -164,6 +189,8 @@ def handle_listing(url, title, price, source):
             f"Now £{price}\n\n"
             f"{url}"
         )
+
+        print("PRICE DROP:", title)
 
 # ---------------- EBAY ---------------- #
 
@@ -191,7 +218,10 @@ def check_ebay():
                 timeout=30
             )
 
-            soup = BeautifulSoup(r.text, "html.parser")
+            soup = BeautifulSoup(
+                r.text,
+                "html.parser"
+            )
 
             for item in soup.select(".s-item"):
 
@@ -199,20 +229,24 @@ def check_ebay():
                 price = item.select_one(".s-item__price")
                 link = item.select_one("a")
 
-                if not title or not price or not link:
+                if not title or not link:
                     continue
 
                 title_text = title.text.strip()
 
-                try:
-                    p = float(
-                        price.text
-                        .replace("£", "")
-                        .split()[0]
-                        .replace(",", "")
-                    )
-                except:
-                    p = None
+                p = None
+
+                if price:
+
+                    try:
+                        p = float(
+                            price.text
+                            .replace("£", "")
+                            .split()[0]
+                            .replace(",", "")
+                        )
+                    except:
+                        p = None
 
                 handle_listing(
                     link["href"],
@@ -222,6 +256,7 @@ def check_ebay():
                 )
 
         except Exception as e:
+
             print("EBAY ERROR:", e)
 
 # ---------------- GOOGLE ---------------- #
@@ -255,13 +290,14 @@ def check_google():
             for item in results.get("items", []):
 
                 handle_listing(
-                    item["link"],
-                    item["title"],
+                    item.get("link"),
+                    item.get("title"),
                     None,
                     "GOOGLE"
                 )
 
         except Exception as e:
+
             print("GOOGLE ERROR:", e)
 
 # ---------------- EUROPA CLUB ---------------- #
@@ -274,7 +310,10 @@ def check_europa_club():
 
         r = requests.get(url, timeout=30)
 
-        soup = BeautifulSoup(r.text, "html.parser")
+        soup = BeautifulSoup(
+            r.text,
+            "html.parser"
+        )
 
         text = soup.get_text("\n")
 
@@ -293,6 +332,7 @@ def check_europa_club():
             )
 
     except Exception as e:
+
         print("EUROPA CLUB ERROR:", e)
 
 # ---------------- WINGLIST ---------------- #
@@ -305,7 +345,10 @@ def check_winglist():
 
         r = requests.get(url, timeout=30)
 
-        soup = BeautifulSoup(r.text, "html.parser")
+        soup = BeautifulSoup(
+            r.text,
+            "html.parser"
+        )
 
         seen = set()
 
@@ -319,7 +362,6 @@ def check_winglist():
 
             t = title.lower()
 
-            # remove navigation junk
             bad_patterns = [
                 "login",
                 "register",
@@ -356,6 +398,7 @@ def check_winglist():
             )
 
     except Exception as e:
+
         print("WINGLIST ERROR:", e)
 
 # ---------------- AFORS ---------------- #
@@ -381,59 +424,79 @@ def check_afors():
                 timeout=30
             )
 
-            soup = BeautifulSoup(r.text, "html.parser")
+            soup = BeautifulSoup(
+                r.text,
+                "html.parser"
+            )
 
             seen = set()
 
-            for a in soup.select("a"):
+            # AFORS listings are usually inside rows
+            rows = soup.find_all("tr")
 
-                title = a.get_text(strip=True)
-                link = a.get("href")
+            for row in rows:
 
-                if not title or not link:
+                text = row.get_text(
+                    " ",
+                    strip=True
+                )
+
+                if not text:
                     continue
 
-                t = title.lower()
-
-                # junk filtering
-                bad = [
-                    "login",
-                    "register",
-                    "contact",
-                    "privacy",
-                    "cookie",
-                    "terms",
-                    "insurance",
-                    "finance",
-                    "instruction",
-                    "wanted"
-                ]
-
-                if any(b in t for b in bad):
+                if len(text) < 20:
                     continue
 
-                if len(title) < 12:
+                link_tag = row.find(
+                    "a",
+                    href=True
+                )
+
+                if not link_tag:
                     continue
+
+                link = link_tag["href"]
 
                 if "view.php?id=" not in link:
                     continue
+
+                if link.startswith("/"):
+                    link = "https://afors.com" + link
+
+                elif not link.startswith("http"):
+                    link = "https://afors.com/" + link
 
                 if link in seen:
                     continue
 
                 seen.add(link)
 
-                if not link.startswith("http"):
-                    link = "https://afors.com/" + link
-
-                parent_text = a.parent.get_text(
+                title = link_tag.get_text(
                     " ",
                     strip=True
                 )
 
-                price = extract_price(parent_text)
+                if not title:
+                    title = text[:120]
 
-                print("AFORS:", title)
+                t = title.lower()
+
+                bad = [
+                    "wanted",
+                    "insurance",
+                    "finance",
+                    "instruction",
+                    "hangarage",
+                    "transport",
+                    "trailer service"
+                ]
+
+                if any(b in t for b in bad):
+                    continue
+
+                price = extract_price(text)
+
+                print("AFORS FOUND:", title, price)
 
                 handle_listing(
                     link,
@@ -443,6 +506,7 @@ def check_afors():
                 )
 
         except Exception as e:
+
             print("AFORS ERROR:", e)
 
 # ---------------- MAIN RUNNER ---------------- #
