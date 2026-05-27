@@ -43,6 +43,12 @@ jobs:
           GOOGLE_CX: ${{ secrets.GOOGLE_CX }}
         run: python main.py
 
+      - name: Upload AFORS debug
+        uses: actions/upload-artifact@v4
+        with:
+          name: afors-debug
+          path: afors_debug.html
+
       - name: Commit updated data
         run: |
           git config --global user.name "bot"
