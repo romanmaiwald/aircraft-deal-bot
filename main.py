@@ -399,7 +399,7 @@ def check_winglist():
 
         print("WINGLIST ERROR:", e)
 
-# ---------------- AFORS PLAYWRIGHT ---------------- #
+# ---------------- AFORS DEBUG ---------------- #
 
 def check_afors():
 
@@ -415,70 +415,25 @@ def check_afors():
 
             page.goto(
                 "https://afors.com",
-                timeout=60000
+                wait_until="networkidle",
+                timeout=90000
             )
 
-            page.wait_for_timeout(5000)
+            page.wait_for_timeout(10000)
 
             html = page.content()
 
+            with open(
+                "afors_debug.html",
+                "w",
+                encoding="utf-8"
+            ) as f:
+
+                f.write(html)
+
+            print("AFORS HTML SAVED")
+
             browser.close()
-
-        soup = BeautifulSoup(
-            html,
-            "html.parser"
-        )
-
-        seen = set()
-
-        links = soup.find_all("a", href=True)
-
-        for a in links:
-
-            title = a.get_text(
-                " ",
-                strip=True
-            )
-
-            href = a["href"]
-
-            if not title:
-                continue
-
-            if len(title) < 10:
-                continue
-
-            t = title.lower()
-
-            if not is_relevant(t):
-                continue
-
-            if href.startswith("/"):
-                href = "https://afors.com" + href
-
-            elif not href.startswith("http"):
-                href = "https://afors.com/" + href
-
-            if href in seen:
-                continue
-
-            seen.add(href)
-
-            parent_text = a.parent.get_text(
-                " ",
-                strip=True
-            )
-
-            price = extract_price(parent_text)
-
-            print("AFORS FOUND:", title)
-
-            handle_listing(
-                href,
-                title,
-                price,
-                "AFORS"
-            )
 
     except Exception as e:
 
