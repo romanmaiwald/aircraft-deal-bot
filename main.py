@@ -1,6 +1,5 @@
 import requests
 from bs4 import BeautifulSoup
-from playwright.sync_api import sync_playwright
 import os
 import json
 import re
@@ -41,7 +40,10 @@ BAD_WORDS = [
     "book",
     "manual",
     "poster",
-    "dvd"
+    "dvd",
+    "service",
+    "insurance",
+    "finance"
 ]
 
 # ---------------- DATA ---------------- #
@@ -118,6 +120,9 @@ def extract_price(text):
         return None
 
     match = re.search(r'£\s?([0-9,]+)', text)
+
+    if not match:
+        match = re.search(r'\$\s?([0-9,]+)', text)
 
     if match:
 
@@ -399,45 +404,146 @@ def check_winglist():
 
         print("WINGLIST ERROR:", e)
 
-# ---------------- AFORS DEBUG ---------------- #
+# ---------------- BARNSTORMERS ---------------- #
 
-def check_afors():
+def check_barnstormers():
+
+    url = "https://www.barnstormers.com/cat.php?mode=latest"
+
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
 
     try:
 
-        with sync_playwright() as p:
+        r = requests.get(
+            url,
+            headers=headers,
+            timeout=30
+        )
 
-            browser = p.chromium.launch(
-                headless=True
+        soup = BeautifulSoup(
+            r.text,
+            "html.parser"
+        )
+
+        for a in soup.find_all("a", href=True):
+
+            title = a.get_text(strip=True)
+
+            if len(title) < 10:
+                continue
+
+            href = a["href"]
+
+            if "classified" not in href:
+                continue
+
+            if href.startswith("/"):
+                href = "https://www.barnstormers.com" + href
+
+            handle_listing(
+                href,
+                title,
+                None,
+                "BARNSTORMERS"
             )
-
-            page = browser.new_page()
-
-            page.goto(
-                "https://afors.com",
-                wait_until="networkidle",
-                timeout=90000
-            )
-
-            page.wait_for_timeout(10000)
-
-            html = page.content()
-
-            with open(
-                "afors_debug.html",
-                "w",
-                encoding="utf-8"
-            ) as f:
-
-                f.write(html)
-
-            print("AFORS HTML SAVED")
-
-            browser.close()
 
     except Exception as e:
 
-        print("AFORS ERROR:", e)
+        print("BARNSTORMERS ERROR:", e)
+
+# ---------------- PLANECHECK ---------------- #
+
+def check_planecheck():
+
+    url = "https://www.planecheck.com"
+
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
+
+    try:
+
+        r = requests.get(
+            url,
+            headers=headers,
+            timeout=30
+        )
+
+        soup = BeautifulSoup(
+            r.text,
+            "html.parser"
+        )
+
+        for a in soup.find_all("a", href=True):
+
+            title = a.get_text(strip=True)
+
+            if len(title) < 10:
+                continue
+
+            href = a["href"]
+
+            if href.startswith("/"):
+                href = "https://www.planecheck.com" + href
+
+            handle_listing(
+                href,
+                title,
+                None,
+                "PLANECHECK"
+            )
+
+    except Exception as e:
+
+        print("PLANECHECK ERROR:", e)
+
+# ---------------- AIRCRAFT24 ---------------- #
+
+def check_aircraft24():
+
+    url = "https://www.aircraft24.com/en"
+
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
+
+    try:
+
+        r = requests.get(
+            url,
+            headers=headers,
+            timeout=30
+        )
+
+        soup = BeautifulSoup(
+            r.text,
+            "html.parser"
+        )
+
+        for a in soup.find_all("a", href=True):
+
+            title = a.get_text(strip=True)
+
+            if len(title) < 10:
+                continue
+
+            href = a["href"]
+
+            if href.startswith("/"):
+                href = "https://www.aircraft24.com" + href
+
+            handle_listing(
+                href,
+                title,
+                None,
+                "AIRCRAFT24"
+            )
+
+    except Exception as e:
+
+        print("AIRCRAFT24 ERROR:", e)
 
 # ---------------- MAIN ---------------- #
 
@@ -449,7 +555,9 @@ def run():
     check_google()
     check_europa_club()
     check_winglist()
-    check_afors()
+    check_barnstormers()
+    check_planecheck()
+    check_aircraft24()
 
     print("Finished.")
 
