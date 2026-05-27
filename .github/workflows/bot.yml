@@ -32,8 +32,7 @@ jobs:
 
       - name: Install packages
         run: |
-          pip install requests beautifulsoup4 playwright
-          playwright install chromium
+          pip install requests beautifulsoup4
 
       - name: Run bot
         env:
@@ -42,12 +41,6 @@ jobs:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           GOOGLE_CX: ${{ secrets.GOOGLE_CX }}
         run: python main.py
-
-      - name: Upload AFORS debug
-        uses: actions/upload-artifact@v4
-        with:
-          name: afors-debug
-          path: afors_debug.html
 
       - name: Commit updated data
         run: |
