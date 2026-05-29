@@ -112,5 +112,11 @@
     "price": null,
     "source": "AIRCRAFT24",
     "url": "https://www.aircraft24.com/singleprop/sonaca/s-201-project--xi180506.htm"
+  },
+  "https://www.aircraft24.com/singleprop/beechcraft/55-baron-project--xi180557.htm": {
+    "title": "Beechcraft 55 Baron project",
+    "price": null,
+    "source": "AIRCRAFT24",
+    "url": "https://www.aircraft24.com/singleprop/beechcraft/55-baron-project--xi180557.htm"
   }
 }
