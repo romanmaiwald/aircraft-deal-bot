@@ -106,5 +106,11 @@
     "price": null,
     "source": "AIRCRAFT24",
     "url": "https://www.aircraft24.com/singleprop/tlultralight/tl-3000-sirius-912-ul--xi180503.htm"
+  },
+  "https://www.aircraft24.com/singleprop/sonaca/s-201-project--xi180506.htm": {
+    "title": "Sonaca S-201 Project",
+    "price": null,
+    "source": "AIRCRAFT24",
+    "url": "https://www.aircraft24.com/singleprop/sonaca/s-201-project--xi180506.htm"
   }
 }
