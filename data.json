@@ -124,5 +124,11 @@
     "price": null,
     "source": "AIRCRAFT24",
     "url": "https://www.aircraft24.com/singleprop/sonaca/s-201-project--xi180505.htm"
+  },
+  "https://www.aircraft24.com/singleprop/portorisen/912-uls--xi180515.htm": {
+    "title": "Porto Risen 912 ULS",
+    "price": null,
+    "source": "AIRCRAFT24",
+    "url": "https://www.aircraft24.com/singleprop/portorisen/912-uls--xi180515.htm"
   }
 }
