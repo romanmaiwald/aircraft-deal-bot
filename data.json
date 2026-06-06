@@ -130,5 +130,11 @@
     "price": null,
     "source": "AIRCRAFT24",
     "url": "https://www.aircraft24.com/singleprop/portorisen/912-uls--xi180515.htm"
+  },
+  "https://www.aircraft24.com/singleprop/sonaca/s-201-project--xi180504.htm": {
+    "title": "Sonaca S-201 project",
+    "price": null,
+    "source": "AIRCRAFT24",
+    "url": "https://www.aircraft24.com/singleprop/sonaca/s-201-project--xi180504.htm"
   }
 }
