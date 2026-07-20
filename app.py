@@ -1,437 +1,806 @@
-from flask import Flask, render_template_string, request, jsonify
-import json
+"""
+Aircraft Deal Bot V2
+Flask Web Interface
+
+Displays aircraft listings from data.json
+Manages hidden adverts through hidden.json
+"""
+
+from flask import Flask, request, redirect, url_for, render_template_string
+
 import os
-import requests
-import base64
+
+from config import DATA_FILE, HIDDEN_FILE
+
+from helpers import (
+    load_json,
+    save_json,
+    hide,
+)
+
+from sources import run_all
+
+
+# --------------------------------------------------
+# APP
+# --------------------------------------------------
 
 app = Flask(__name__)
 
-# ---------------- CONFIG ---------------- #
 
-DATA_FILE = "data.json"
+# --------------------------------------------------
+# INITIALISE FILES
+# --------------------------------------------------
 
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-GITHUB_REPO = os.getenv("GITHUB_REPO")
+def ensure_files():
 
-HIDDEN_FILE = "hidden.json"
-WATCHLIST_FILE = "watchlist.json"
+    if not os.path.exists(DATA_FILE):
 
-# ---------------- GITHUB STORAGE ---------------- #
-
-def github_headers():
-    return {
-        "Authorization": f"token {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github+json"
-    }
-
-def github_get_file(path, default):
-
-    try:
-
-        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
-
-        r = requests.get(url, headers=github_headers())
-
-        if r.status_code != 200:
-            return default
-
-        data = r.json()
-
-        content = base64.b64decode(data["content"]).decode()
-
-        return json.loads(content)
-
-    except:
-        return default
-
-def github_save_file(path, content_data):
-
-    try:
-
-        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
-
-        # get existing SHA if file exists
-        r = requests.get(url, headers=github_headers())
-
-        sha = None
-
-        if r.status_code == 200:
-            sha = r.json()["sha"]
-
-        content_encoded = base64.b64encode(
-            json.dumps(content_data, indent=2).encode()
-        ).decode()
-
-        payload = {
-            "message": f"update {path}",
-            "content": content_encoded
-        }
-
-        if sha:
-            payload["sha"] = sha
-
-        requests.put(
-            url,
-            headers=github_headers(),
-            json=payload
+        save_json(
+            DATA_FILE,
+            {}
         )
 
-    except Exception as e:
-        print("GitHub save error:", e)
+    if not os.path.exists(HIDDEN_FILE):
 
-# ---------------- LOCAL DATA ---------------- #
+        save_json(
+            HIDDEN_FILE,
+            {}
+        )
 
-def load_data():
 
-    try:
-        if os.path.exists(DATA_FILE):
-            with open(DATA_FILE, "r") as f:
-                return json.load(f)
-    except:
-        pass
+ensure_files()
 
-    return {}
 
-def load_hidden():
-    return set(github_get_file(HIDDEN_FILE, []))
+# --------------------------------------------------
+# LOADERS
+# --------------------------------------------------
 
-def save_hidden(hidden):
-    github_save_file(HIDDEN_FILE, list(hidden))
+def get_data():
 
-def load_watchlist():
-    return set(github_get_file(WATCHLIST_FILE, []))
+    data = load_json(DATA_FILE)
 
-def save_watchlist(w):
-    github_save_file(WATCHLIST_FILE, list(w))
+    if not isinstance(data, dict):
 
-# ---------------- UI ---------------- #
+        return {}
 
-HTML = """
+    return data
+
+
+
+def get_hidden():
+
+    hidden = load_json(HIDDEN_FILE)
+
+    if not isinstance(hidden, dict):
+
+        return {}
+
+    return hidden
+
+
+
+def visible_listings():
+
+    data = get_data()
+
+    hidden = get_hidden()
+
+    results = []
+
+    # Reverse insertion order = newest first
+
+    for uid, item in reversed(list(data.items())):
+
+        if uid in hidden:
+
+            continue
+
+        listing = item.copy()
+
+        listing["id"] = uid
+
+        results.append(listing)
+
+    return results
+
+
+
+def hidden_listings():
+
+    data = get_data()
+
+    hidden = get_hidden()
+
+    results = []
+
+    for uid, item in data.items():
+
+        if uid in hidden:
+
+            listing = item.copy()
+
+            listing["id"] = uid
+
+            results.append(listing)
+
+    return results
+
+
+
+# --------------------------------------------------
+# STATISTICS
+# --------------------------------------------------
+
+def statistics():
+
+    data = get_data()
+
+    hidden = get_hidden()
+
+    source_counts = {}
+
+    for uid, item in data.items():
+
+        source = item.get(
+            "source",
+            "Unknown"
+        )
+
+        source_counts[source] = (
+            source_counts.get(source, 0)
+            + 1
+        )
+
+    return {
+
+        "total": len(data),
+
+        "hidden": len(hidden),
+
+        "visible": len(data) - len(hidden),
+
+        "sources": source_counts
+
+    }
+
+
+# --------------------------------------------------
+# TEMPLATE
+# --------------------------------------------------
+
+PAGE_TEMPLATE = """
+
 <!DOCTYPE html>
-<html>
-<head>
-<title>Aircraft Deal Bot</title>
 
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<html>
+
+<head>
+
+<title>
+Aircraft Deal Bot V2
+</title>
+
+
+<meta name="viewport"
+content="width=device-width, initial-scale=1">
+
 
 <style>
 
-body{
-    font-family:Arial;
-    background:#0b0f14;
-    color:white;
+
+body {
+
+    font-family:
+    Arial, Helvetica, sans-serif;
+
+    background:#f4f6f8;
+
+    margin:0;
+
     padding:20px;
+
 }
 
-.card{
-    background:#1a2433;
-    padding:15px;
-    margin-bottom:12px;
+
+.container {
+
+    max-width:1200px;
+
+    margin:auto;
+
+}
+
+
+.header {
+
+    background:#1f2937;
+
+    color:white;
+
+    padding:20px;
+
     border-radius:10px;
+
 }
 
-.price{
-    color:#00ff99;
-    font-weight:bold;
+
+.card {
+
+    background:white;
+
+    padding:20px;
+
+    margin-top:15px;
+
+    border-radius:10px;
+
+    box-shadow:
+    0 2px 8px rgba(0,0,0,0.08);
+
 }
 
-.tag{
-    background:#2b3b52;
-    display:inline-block;
-    padding:3px 8px;
+
+.grid {
+
+    display:grid;
+
+    grid-template-columns:
+    repeat(auto-fit,minmax(250px,1fr));
+
+    gap:15px;
+
+}
+
+
+input, select, button {
+
+    padding:10px;
+
     border-radius:6px;
-    font-size:12px;
-    margin-bottom:8px;
+
+    border:1px solid #ccc;
+
 }
 
-button{
-    padding:7px 12px;
-    border:none;
-    border-radius:6px;
-    margin:3px;
+
+button {
+
+    background:#2563eb;
+
+    color:white;
+
     cursor:pointer;
+
+    border:none;
+
 }
 
-.open{background:#4da3ff;color:white;}
-.hide{background:#ff4d4d;color:white;}
-.watch{background:#ffaa00;color:black;}
 
-.drop{
-    color:#ff8080;
+button:hover {
+
+    opacity:0.85;
+
+}
+
+
+.hide {
+
+    background:#dc2626;
+
+}
+
+
+.restore {
+
+    background:#16a34a;
+
+}
+
+
+.refresh {
+
+    background:#7c3aed;
+
+}
+
+
+a {
+
+    color:#2563eb;
+
+    word-break:break-word;
+
+}
+
+
+.price {
+
+    font-size:18px;
+
     font-weight:bold;
+
 }
 
-.toolbar{
-    margin-bottom:20px;
+
+.small {
+
+    color:#666;
+
+    font-size:14px;
+
 }
+
+
+@media(max-width:600px){
+
+    body {
+
+        padding:10px;
+
+    }
+
+}
+
 
 </style>
+
+
 </head>
+
 
 <body>
 
-<h2>✈ Aircraft Deal Bot</h2>
 
-<div class="toolbar">
+<div class="container">
 
-<button onclick="setFilter('all')">All</button>
-<button onclick="setFilter('europa')">Europa</button>
-<button onclick="setFilter('rotax')">Rotax</button>
-<button onclick="setFilter('cheap')">Under £20k</button>
-<button onclick="setFilter('watchlist')">Watchlist</button>
-<button onclick="showHidden()">Hidden</button>
+
+<div class="header">
+
+<h1>
+✈ Aircraft Deal Bot V2
+</h1>
+
+<p>
+Aircraft project and engine listings
+</p>
+
+
+<form method="post"
+action="/refresh">
+
+<button class="refresh">
+
+Refresh Sources
+
+</button>
+
+</form>
+
 
 </div>
 
-<div id="list"></div>
 
-<script>
 
-let currentFilter = 'all';
+<div class="card">
 
-function setFilter(f){
-    currentFilter = f;
-    loadData();
-}
 
-async function loadData(){
+<h2>
+Statistics
+</h2>
 
-    const res = await fetch('/data');
-    const data = await res.json();
 
-    let html = '';
+<div class="grid">
 
-    for(let item of data.items){
 
-        let t = item.title.toLowerCase();
+<div>
+<b>Total adverts</b>
+<br>
+{{stats.total}}
+</div>
 
-        if(currentFilter === 'europa' &&
-           !t.includes('europa'))
-            continue;
 
-        if(currentFilter === 'rotax' &&
-           !(t.includes('rotax') ||
-             t.includes('912') ||
-             t.includes('914')))
-            continue;
+<div>
+<b>Visible</b>
+<br>
+{{stats.visible}}
+</div>
 
-        if(currentFilter === 'cheap' &&
-           item.price &&
-           item.price > 20000)
-            continue;
 
-        if(currentFilter === 'watchlist' &&
-           !item.watchlisted)
-            continue;
+<div>
+<b>Hidden</b>
+<br>
+{{stats.hidden}}
+</div>
 
-        html += `
-        <div class="card">
 
-            <div class="tag">${item.source}</div>
+</div>
 
-            <h3>${item.title}</h3>
 
-            <div class="price">
-                £${item.price || 'N/A'}
-            </div>
 
-            ${item.price_drop ?
-                '<div class="drop">📉 PRICE DROP</div>' : ''}
+<h3>
+Sources
+</h3>
 
-            <br><br>
 
-            <button class="open"
-                onclick="window.open('${item.url}')">
-                Open
-            </button>
+<ul>
 
-            <button class="hide"
-                onclick="hideItem('${item.url}')">
-                Hide
-            </button>
+{% for source,count in stats.sources.items() %}
 
-            <button class="watch"
-                onclick="toggleWatch('${item.url}')">
+<li>
+{{source}} :
+{{count}}
+</li>
 
-                ${item.watchlisted ? 'Unwatch' : 'Watch'}
+{% endfor %}
 
-            </button>
+</ul>
 
-        </div>`;
-    }
 
-    document.getElementById('list').innerHTML = html;
-}
+</div>
 
-async function hideItem(url){
 
-    await fetch('/hide',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({url})
-    });
 
-    loadData();
-}
+<div class="card">
 
-async function toggleWatch(url){
 
-    await fetch('/watch',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({url})
-    });
+<form method="get">
 
-    loadData();
-}
 
-async function showHidden(){
+<input
 
-    const res = await fetch('/hidden');
-    const data = await res.json();
+type="text"
 
-    let html = '<h3>Hidden Listings</h3>';
+name="search"
 
-    for(let item of data.items){
+placeholder="Search adverts"
 
-        html += `
-        <div class="card">
+value="{{search}}"
 
-            <h3>${item.title}</h3>
 
-            <button onclick="restoreItem('${item.url}')">
-                Restore
-            </button>
+>
 
-        </div>`;
-    }
 
-    document.getElementById('list').innerHTML = html;
-}
+<select name="source">
 
-async function restoreItem(url){
 
-    await fetch('/restore',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({url})
-    });
+<option value="">
+All Sources
+</option>
 
-    loadData();
-}
 
-loadData();
+{% for source in sources %}
 
-</script>
+<option
+
+value="{{source}}"
+
+{% if source == selected_source %}
+selected
+{% endif %}
+
+>
+
+{{source}}
+
+</option>
+
+
+{% endfor %}
+
+
+</select>
+
+
+
+<button>
+
+Search
+
+</button>
+
+
+</form>
+
+
+<p>
+
+<a href="/hidden">
+
+View Hidden Adverts
+
+</a>
+
+</p>
+
+
+</div>
+
+
+
+{% for item in listings %}
+
+
+<div class="card">
+
+
+<h2>
+
+{{item.title}}
+
+</h2>
+
+
+<p>
+
+<b>
+Source:
+</b>
+
+{{item.source}}
+
+</p>
+
+
+<p class="price">
+
+Price:
+
+{% if item.price %}
+
+£{{"{:,.0f}".format(item.price)}}
+
+{% else %}
+
+N/A
+
+{% endif %}
+
+</p>
+
+
+<p>
+
+{{item.description}}
+
+</p>
+
+
+<p>
+
+<a href="{{item.url}}"
+target="_blank">
+
+Open Advert
+
+</a>
+
+</p>
+
+
+<form method="post"
+action="/hide/{{item.id}}">
+
+
+<button class="hide">
+
+Hide Advert
+
+</button>
+
+
+</form>
+
+
+</div>
+
+
+{% endfor %}
+
+
+
+{% if not listings %}
+
+
+<div class="card">
+
+<h2>
+No adverts found
+</h2>
+
+</div>
+
+
+{% endif %}
+
+
+
+</div>
+
 
 </body>
+
+
 </html>
+
 """
 
-# ---------------- ROUTES ---------------- #
+
+
+# --------------------------------------------------
+# ROUTES
+# --------------------------------------------------
 
 @app.route("/")
-def home():
-    return render_template_string(HTML)
+def index():
 
-@app.route("/data")
-def data():
+    listings = visible_listings()
 
-    raw = load_data()
+    search = request.args.get(
+        "search",
+        ""
+    ).lower()
 
-    hidden = load_hidden()
-    watchlist = load_watchlist()
 
-    items = []
+    selected_source = request.args.get(
+        "source",
+        ""
+    )
 
-    for url, v in raw.items():
 
-        if url in hidden:
-            continue
+    if search:
 
-        items.append({
-            "url": url,
-            "title": v.get("title", "Unknown"),
-            "price": v.get("price"),
-            "source": v.get("source", "BOT"),
-            "price_drop": v.get("price_drop", False),
-            "watchlisted": url in watchlist
-        })
+        listings = [
 
-    items.reverse()
+            x for x in listings
 
-    return jsonify({"items": items})
+            if search in (
+                x.get("title","")
+                +
+                x.get("description","")
+            ).lower()
 
-@app.route("/hide", methods=["POST"])
-def hide():
+        ]
 
-    req = request.get_json()
 
-    url = req.get("url")
+    if selected_source:
 
-    hidden = load_hidden()
+        listings = [
 
-    hidden.add(url)
+            x for x in listings
 
-    save_hidden(hidden)
+            if x.get("source")
+            ==
+            selected_source
 
-    return {"ok": True}
+        ]
 
-@app.route("/restore", methods=["POST"])
-def restore():
 
-    req = request.get_json()
+    sources = sorted(
 
-    url = req.get("url")
+        list(
 
-    hidden = load_hidden()
+            set(
 
-    if url in hidden:
-        hidden.remove(url)
+                x.get(
+                    "source",
+                    "Unknown"
+                )
 
-    save_hidden(hidden)
+                for x in visible_listings()
 
-    return {"ok": True}
+            )
+
+        )
+
+    )
+
+
+    return render_template_string(
+
+        PAGE_TEMPLATE,
+
+        listings=listings,
+
+        stats=statistics(),
+
+        search=search,
+
+        sources=sources,
+
+        selected_source=selected_source
+
+    )
+
+
+
+@app.route(
+    "/hide/<uid>",
+    methods=["POST"]
+)
+
+def hide_listing(uid):
+
+    hide(uid)
+
+    return redirect(
+        url_for("index")
+    )
+
+
 
 @app.route("/hidden")
-def hidden():
+def hidden_page():
 
-    raw = load_data()
+    listings = hidden_listings()
 
-    hidden = load_hidden()
 
-    items = []
+    return render_template_string(
 
-    for url in hidden:
+        PAGE_TEMPLATE,
 
-        if url in raw:
+        listings=listings,
 
-            items.append({
-                "url": url,
-                "title": raw[url].get("title", "Unknown")
-            })
+        stats=statistics(),
 
-    return jsonify({"items": items})
+        search="",
 
-@app.route("/watch", methods=["POST"])
-def watch():
+        sources=[],
 
-    req = request.get_json()
+        selected_source=""
 
-    url = req.get("url")
+    )
 
-    w = load_watchlist()
 
-    if url in w:
-        w.remove(url)
-    else:
-        w.add(url)
 
-    save_watchlist(w)
+@app.route(
+    "/restore/<uid>",
+    methods=["POST"]
+)
 
-    return {"ok": True}
+def restore_listing(uid):
 
-# ---------------- MAIN ---------------- #
+    hidden = get_hidden()
+
+
+    if uid in hidden:
+
+        del hidden[uid]
+
+        save_json(
+            HIDDEN_FILE,
+            hidden
+        )
+
+
+    return redirect(
+        url_for("hidden_page")
+    )
+
+
+
+@app.route(
+    "/refresh",
+    methods=["POST"]
+)
+
+def refresh():
+
+    run_all()
+
+    return redirect(
+        url_for("index")
+    )
+
+
+# --------------------------------------------------
+# START
+# --------------------------------------------------
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+
+    app.run(
+        host="0.0.0.0",
+        port=5000,
+        debug=False
+    )
