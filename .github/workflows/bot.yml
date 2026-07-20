@@ -1,54 +1,110 @@
 name: Aircraft Deal Bot
 
 on:
+
   schedule:
+
     - cron: "*/10 * * * *"
+
 
   workflow_dispatch:
 
+
 permissions:
+
   contents: write
 
+
+
 jobs:
+
   run-bot:
+
 
     runs-on: ubuntu-latest
 
+
     concurrency:
+
       group: aircraft-bot
+
       cancel-in-progress: false
+
+
 
     steps:
 
-      - name: Checkout
+
+      - name: Checkout repository
+
         uses: actions/checkout@v4
+
         with:
+
           persist-credentials: true
 
+          fetch-depth: 0
+
+
+
       - name: Setup Python
+
         uses: actions/setup-python@v5
+
         with:
+
           python-version: "3.11"
 
-      - name: Install packages
-        run: |
-          pip install requests beautifulsoup4
 
-      - name: Run bot
+
+      - name: Install dependencies
+
+        run: |
+
+          pip install -r requirements.txt
+
+
+
+      - name: Run Aircraft Deal Bot
+
         env:
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.CHAT_ID }}
-          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-          GOOGLE_CX: ${{ secrets.GOOGLE_CX }}
-        run: python main.py
 
-      - name: Commit updated data
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+
+          GOOGLE_CX: ${{ secrets.GOOGLE_CX }}
+
         run: |
-          git config --global user.name "bot"
+
+          python main.py
+
+
+
+      - name: Commit updated database files
+
+        run: |
+
+
+          git config --global user.name "aircraft-deal-bot"
+
           git config --global user.email "bot@example.com"
 
-          git add data.json
 
-          git diff --cached --quiet || git commit -m "update data"
+          git add data.json hidden.json
+
+
+          git diff --cached --quiet || git commit -m "update aircraft listings"
+
+
+
+      - name: Push changes
+
+        run: |
+
+
+          git pull --rebase
 
           git push
